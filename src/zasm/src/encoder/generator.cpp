@@ -37,6 +37,8 @@ namespace zasm
             case x86::Mnemonic::Loope:
             case x86::Mnemonic::Loopne:
                 return true;
+            default:
+                break;
         }
         return false;
     }
@@ -74,7 +76,7 @@ namespace zasm
         const auto& vis = decodedInstr.getOperandsVisibility();
         for (size_t i = 0; i < opCount; i++)
         {
-            if (vis[i] == Operand::Visibility::Hidden)
+            if (vis.get(i) == Operand::Visibility::Hidden)
                 continue;
 
             const auto& opSrc = operands[i];
