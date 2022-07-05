@@ -1,18 +1,16 @@
 #include <chrono>
+#include <cstring>
+#include <iomanip>
 #include <iostream>
-#include <zasm/assembler.hpp>
-#include <zasm/decoder.hpp>
-#include <zasm/program.hpp>
+#include <zasm/zasm.hpp>
 
-static std::string hexDump(const uint8_t* buf, size_t len)
+static std::string getHexDump(const uint8_t* buf, size_t len)
 {
     std::string res;
     for (size_t i = 0; i < len; i++)
     {
         char temp[3]{};
-        sprintf_s(temp, "%02X", buf[i]);
-        if (!res.empty())
-            res += " ";
+        snprintf(temp, std::size(temp), "%02X", buf[i]);
         res += temp;
     }
     return res;
@@ -23,10 +21,10 @@ static void measureSerializePerformance()
     using namespace zasm;
 
     // Program contains all the nodes and labels.
-    Program program(ZydisMachineMode::ZYDIS_MACHINE_MODE_LONG_64);
+    Program program(zasm::MachineMode::AMD64);
 
     // Emitter
-    Assembler a(program);
+    x86::Assembler a(program);
 
     // Append to end, this is the default when instancing Assembler.
     a.setCursor(program.getTail());
@@ -36,7 +34,6 @@ static void measureSerializePerformance()
     constexpr auto kSerializationIterations = 1'000'000;
 
     {
-        using namespace operands;
         for (int i = 0; i < kNumInstrGenerations; i++)
         {
             // Label names are optional.
@@ -44,13 +41,13 @@ static void measureSerializePerformance()
             auto label2 = a.createLabel("testLabel2");
             auto labelInt3 = a.createLabel("int3");
 
-            a.mov(rax, rcx);
-            a.xor_(rax, Imm(1));
+            a.mov(x86::rax, x86::rcx);
+            a.xor_(x86::rax, Imm(1));
             a.jz(label1);
-            a.xor_(rcx, Imm(1));
+            a.xor_(x86::rcx, Imm(1));
             a.jmp(label2);
             // Reference label as absolute address.
-            a.mov(rax, labelInt3);
+            a.mov(x86::rax, labelInt3);
             a.bind(label1);
             a.nop();
             a.nop();
@@ -58,10 +55,12 @@ static void measureSerializePerformance()
             a.bind(labelInt3);
             a.int3();
             a.nop();
-            a.mov(rax, Imm(0xF00));
+            a.mov(x86::rax, Imm(0xF00));
             a.bind(label2);
             a.nop();
-            a.mov(rax, Imm(0xBAD));
+            a.mov(x86::rax, Imm(0xBAD));
+
+            a.lea(x86::rsp, x86::qword_ptr(x86::rsp, 0x50));
         }
 
         // Embedding data.
@@ -77,16 +76,17 @@ static void measureSerializePerformance()
     size_t numIterations = 1;
 
     auto tsBegin = std::chrono::high_resolution_clock::now();
+    zasm::Serializer serializer;
     for (size_t i = 0; i < kSerializationIterations; i++)
     {
-        auto serializeStatus = program.serialize(0x00007FF7B7D84DB0);
+        auto serializeStatus = serializer.serialize(program, 0x00007FF7B7D84DB0);
         if (serializeStatus != Error::None)
         {
             std::cout << "Encoder failure: " << zasm::getErrorName(serializeStatus) << "\n";
             return;
         }
 
-        bytesWritten += program.getCodeSize();
+        bytesWritten += serializer.getCodeSize();
     }
     auto tsEnd = std::chrono::high_resolution_clock::now();
 
@@ -102,9 +102,148 @@ static void measureSerializePerformance()
     // std::cout << "Dump: " << hexBytes << std::endl;
 }
 
+static void quickTest()
+{
+    using namespace zasm;
+
+    // Program contains all the nodes and labels.
+    Program program(MachineMode::AMD64);
+
+    // Emitter
+    x86::Assembler a(program);
+
+    a.push(Imm(0xC11));
+
+    Serializer serializer;
+    serializer.serialize(program, 0x00007FF7B7D84DB0);
+
+    const auto codeDump = getHexDump(serializer.getCode(), serializer.getCodeSize());
+    std::cout << codeDump << "\n";
+}
+
+static void quickLeakTest()
+{
+    using namespace zasm;
+
+    constexpr uint8_t ConstData[128]{};
+
+    for (int i = 0; i < 100000; i++)
+    {
+        // Program contains all the nodes and labels.
+        Program program(MachineMode::AMD64);
+
+        // Emitter
+        x86::Assembler a(program);
+
+        a.push(Imm(0xC11));
+        a.embed(ConstData, sizeof(ConstData));
+
+        Serializer serializer;
+        serializer.serialize(program, 0x00007FF7B7D84DB0);
+    }
+}
+
+static void decodeToAssembler()
+{
+    using namespace zasm;
+
+    const uint64_t baseAddr = 0x00007FF6BC738ED4;
+    const std::array<uint8_t, 24> code = {
+        0x40, 0x53,             // push rbx
+        0x45, 0x8B, 0x18,       // mov r11d, dword ptr ds:[r8]
+        0x48, 0x8B, 0xDA,       // mov rbx, rdx
+        0x41, 0x83, 0xE3, 0xF8, // and r11d, 0xFFFFFFF8
+        0x4C, 0x8B, 0xC9,       // mov r9, rcx
+        0x41, 0xF6, 0x00, 0x04, // test byte ptr ds:[r8], 0x4
+        0x4C, 0x8B, 0xD1,       // mov r10, rcx
+        0x74, 0x13,             // je 0x00007FF6BC738EFF
+    };
+
+    Program program(MachineMode::AMD64);
+
+    Decoder decoder(program.getMode());
+
+    x86::Assembler assembler(program);
+
+    size_t bytesDecoded = 0;
+
+    while (bytesDecoded < code.size())
+    {
+        const auto curAddress = baseAddr + bytesDecoded;
+
+        auto decoderRes = decoder.decode(code.data() + bytesDecoded, code.size() - bytesDecoded, curAddress);
+        if (!decoderRes)
+        {
+            std::cout << "Failed to decode at " << std::hex << curAddress << ", " << decoderRes.error() << "\n";
+            return;
+        }
+
+        const auto& instr = decoderRes.value();
+        assembler.fromInstruction(instr);
+
+        bytesDecoded += instr.getLength();
+    }
+
+    Serializer serializer;
+    serializer.serialize(program, baseAddr);
+
+    const auto codeDump = getHexDump(serializer.getCode(), serializer.getCodeSize());
+    std::cout << codeDump << "\n";
+}
+
+static void sectionTest()
+{
+    using namespace zasm;
+
+    Program program(MachineMode::AMD64);
+
+    x86::Assembler a(program);
+
+    auto labelA = a.createLabel();
+    auto labelB = a.createLabel();
+    auto labelC = a.createLabel();
+
+    a.section(".text");
+    {
+        a.lea(x86::rax, x86::qword_ptr(labelA));
+        a.lea(x86::rbx, x86::qword_ptr(labelB));
+        a.lea(x86::rdx, x86::qword_ptr(labelC));
+    }
+
+    a.section(".data", Section::Attribs::Data);
+    {
+        a.bind(labelA);
+        a.dq(0x123456789);
+        a.bind(labelB);
+        a.dq(0x987654321);
+        a.bind(labelC);
+        a.dq(0xABCDEF123);
+    }
+
+    Serializer serializer;
+
+    auto res = serializer.serialize(program, 0x00400000);
+    assert(res == Error::None);
+
+    for (size_t i = 0; i < serializer.getSectionCount(); ++i)
+    {
+        const auto* sect = serializer.getSectionInfo(i);
+
+        std::cout << ".section " << sect->name << ", VA: 0x" << std::hex << sect->address << ", VSize: 0x" << sect->virtualSize
+                  << ", Raw: 0x" << sect->physicalSize << "\n";
+
+        const auto byteDump = getHexDump(serializer.getCode() + sect->offset, sect->physicalSize);
+        std::cout << byteDump << "\n";
+    }
+}
+
 int main()
 {
-    measureSerializePerformance();
+    sectionTest();
+    // quickLeakTest();
+    // decodeToAssembler();
+    // quickTest();
+    //  measureSerializePerformance();
 
     return EXIT_SUCCESS;
 }
