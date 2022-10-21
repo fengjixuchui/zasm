@@ -6,7 +6,9 @@
 #include "node.hpp"
 #include "section.hpp"
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <zasm/base/mode.hpp>
 #include <zasm/core/errors.hpp>
 #include <zasm/core/expected.hpp>
@@ -19,13 +21,20 @@ namespace zasm
         struct ProgramState;
     }
 
-    class Program
+    class Observer;
+
+    class Program final
     {
-        detail::ProgramState* _state;
+        std::unique_ptr<detail::ProgramState> _state;
 
     public:
         Program(MachineMode mode);
+        Program(const Program&) = delete;
+        Program(Program&& other) noexcept;
         ~Program();
+
+        Program& operator=(const Program&) = delete;
+        Program& operator=(Program&& other) noexcept;
 
         MachineMode getMode() const noexcept;
 
@@ -33,6 +42,21 @@ namespace zasm
         /// This is primarily used by other components, this should not be directly used.
         /// </summary>
         detail::ProgramState& getState() const noexcept;
+
+        /// <summary>
+        /// Adds the observer to the program state, see the observer for the list of events.
+        /// The same instance can be only registered once.
+        /// </summary>
+        /// <param name="observer">The observer instance</param>
+        /// <returns>True if the observer was added</returns>
+        bool addObserver(Observer& observer);
+
+        /// <summary>
+        /// Removes the observer instance from the program state.
+        /// </summary>
+        /// <param name="observer">The observer instance</param>
+        /// <returns>True if the observer was removed</returns>
+        bool removeObserver(Observer& observer) noexcept;
 
     public:
         /// <summary>
@@ -111,7 +135,7 @@ namespace zasm
         /// Returns the current amount of nodes in the list.
         /// </summary>
         /// <returns>Node count</returns>
-        size_t size() const noexcept;
+        std::size_t size() const noexcept;
 
         /// <summary>
         /// Clears the entire program state, pools will keep their
@@ -137,10 +161,11 @@ namespace zasm
         /// </summary>
         /// <param name="value">The data to place inside the node</param>
         /// <returns>Newly allocated node containing value</returns>
-        const Node* createNode(const Instruction& value);
-        const Node* createNode(const Data& value);
-        const Node* createNode(Data&& value);
-        const Node* createNode(const EmbeddedLabel& value);
+        const Node* createNode(const Instruction& instr);
+        const Node* createNode(Instruction&& instr);
+        const Node* createNode(const Data& data);
+        const Node* createNode(Data&& data);
+        const Node* createNode(const EmbeddedLabel& label);
 
     public:
         /// <summary>
@@ -149,7 +174,7 @@ namespace zasm
         /// </summary>
         /// <param name="name">Optional label name, pass null for none.</param>
         /// <returns>Label</returns>
-        const Label createLabel(const char* name = nullptr);
+        Label createLabel(const char* name = nullptr);
 
         /// <summary>
         /// Binds the label to a new unlinked node. A label can be only bound once.
@@ -164,7 +189,7 @@ namespace zasm
         /// </summary>
         /// <param name="name">Optional label name, pass null for none.</param>
         /// <returns>Label</returns>
-        const Label createExternalLabel(const char* name = nullptr);
+        Label createExternalLabel(const char* name = nullptr);
 
         /// <summary>
         /// Returns if the specified label is an external label.
@@ -181,7 +206,7 @@ namespace zasm
         /// </summary>
         /// <param name="moduleName">Name of the module to import.</param>
         /// <returns>Label</returns>
-        const Label getOrCreateImportLabel(const char* moduleName, const char* importName);
+        Label getOrCreateImportLabel(const char* moduleName, const char* importName);
 
         /// <summary>
         /// Returns if the specified label is an import label.
@@ -197,15 +222,6 @@ namespace zasm
         /// <returns>Returns LabelData on success, Error on failure.</returns>
         Expected<LabelData, Error> getLabelData(const Label& label) const noexcept;
 
-        /// <summary>
-        /// Creates a Data object that can be stored in a Node. The data object
-        /// can hold up to 32 bytes of data before it will use the heap.
-        /// </summary>
-        /// <param name="ptr">A pointer to the input data</param>
-        /// <param name="len">Size of the data in bytes</param>
-        /// <returns>Data object containing a copy of the specified data</returns>
-        const Data createData(const void* ptr, size_t len);
-
     public:
         /// <summary>
         /// Creates a new section that can be used to segment code and data.
@@ -215,7 +231,7 @@ namespace zasm
         /// <param name="attribs">One or multiple Section::Attribs</param>
         /// <param name="align">Specifies the size the section is aligned to, this should be ideally one memory page.</param>
         /// <returns>Section</returns>
-        const Section createSection(const char* name, Section::Attribs attribs, int32_t align);
+        Section createSection(const char* name, Section::Attribs attribs, std::int32_t align);
 
         /// <summary>
         /// Binds the section to a new unlinked node. A section can be only bound once.
@@ -245,7 +261,7 @@ namespace zasm
         /// <param name="section">Section to set align for</param>
         /// <param name="align">The new alignment</param>
         /// <returns>Section align, -1 if an invalid section was supplied.</returns>
-        int32_t getSectionAlign(const Section& section);
+        std::int32_t getSectionAlign(const Section& section) noexcept;
 
         /// <summary>
         /// Sets the section alignment.
@@ -253,7 +269,7 @@ namespace zasm
         /// <param name="section">Section to set align for</param>
         /// <param name="align">The new alignment</param>
         /// <returns>Error::None on success otherwise see Error</returns>
-        Error setSectionAlign(const Section& section, int32_t align);
+        Error setSectionAlign(const Section& section, std::int32_t align) noexcept;
     };
 
 } // namespace zasm

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <zasm/base/mode.hpp>
 #include <zasm/core/errors.hpp>
+#include <zasm/core/expected.hpp>
 #include <zasm/program/instruction.hpp>
 
 namespace zasm
@@ -11,14 +13,14 @@ namespace zasm
     // Encoder context used for serialization by the Program.
     struct EncoderContext;
 
-    enum class RelocationType : uint8_t
+    enum class RelocationType : std::uint8_t
     {
         None = 0,
         Abs,
         Rel32,
     };
 
-    enum class RelocationData : uint8_t
+    enum class RelocationData : std::uint8_t
     {
         None = 0,
         Immediate,
@@ -29,8 +31,10 @@ namespace zasm
     // A small buffer which holds the bytes of a single encoded instruction and the length.
     struct EncoderResult
     {
-        std::array<uint8_t, 15> data{};
-        uint8_t length{};
+        static constexpr std::size_t kMaxInstructionSize = 15;
+
+        std::array<std::uint8_t, kMaxInstructionSize> data{};
+        std::uint8_t length{};
         RelocationType relocKind{};
         RelocationData relocData{};
         Label::Id relocLabel{ Label::Id::Invalid };
@@ -38,17 +42,15 @@ namespace zasm
 
     using EncoderOperands = std::array<Operand, 5 /* ZYDIS_ENCODER_MAX_OPERANDS */>;
 
-    // This function might change some operands internally in order to encode without a context.
-    // The purpose of this function is to generate instructions for the assembler before
-    // full serialization. This allows to query instruction meta data such as operand access
-    // and CPU flags, this can be also used to estimate the size.
-    Error encodeEstimated(
-        EncoderResult& buf, MachineMode mode, Instruction::Attribs attribs, Instruction::Mnemonic id, size_t numOps,
-        const EncoderOperands& operands) noexcept;
+    // Encodes with the requested instruction without a context and will use temporary
+    // values for operands like labels and rip-rel addressing.
+    Expected<EncoderResult, Error> encode(
+        MachineMode mode, Instruction::Attribs attribs, Instruction::Mnemonic mnemonic, std::size_t numOps,
+        const EncoderOperands& operands);
 
     // Encodes with full context. This function still allows labels to be unbound and will not error
     // instead a temporary value be usually encoded. It is expected for the serialization to handle this
     // with multiple passes.
-    Error encodeFull(EncoderResult& buf, EncoderContext& ctx, MachineMode mode, const Instruction& instr) noexcept;
+    Expected<EncoderResult, Error> encode(EncoderContext& ctx, MachineMode mode, const Instruction& instr);
 
 } // namespace zasm

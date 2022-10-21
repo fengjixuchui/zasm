@@ -50,19 +50,17 @@ namespace zasm
     }
 
     InstrGenerator::Result InstrGenerator::generate(
-        Instruction::Attribs attribs, Instruction::Mnemonic id, size_t numOps, EncoderOperands&& operands) noexcept
+        Instruction::Attribs attribs, Instruction::Mnemonic mnemonic, size_t numOps, EncoderOperands&& operands)
     {
-        EncoderResult buf{};
-
-        auto encodeResult = encodeEstimated(
-            buf, _mode, static_cast<zasm::Instruction::Attribs>(attribs), static_cast<zasm::Instruction::Mnemonic>(id), numOps,
+        auto encodeResult = encode(
+            _mode, static_cast<zasm::Instruction::Attribs>(attribs), static_cast<zasm::Instruction::Mnemonic>(mnemonic), numOps,
             operands);
-        if (encodeResult != Error::None)
+        if (!encodeResult)
         {
-            return zasm::makeUnexpected(encodeResult);
+            return zasm::makeUnexpected(encodeResult.error());
         }
 
-        auto decodeResult = _decoder.decode(buf.data.data(), buf.length, 0);
+        auto decodeResult = _decoder.decode(encodeResult->data.data(), encodeResult->length, 0);
         if (!decodeResult)
         {
             return zasm::makeUnexpected(decodeResult.error());
@@ -71,23 +69,27 @@ namespace zasm
         // Exchange back certain operands.
         const auto& decodedInstr = *decodeResult;
 
-        auto newOps = decodedInstr.getOperands();
+        // Intentional copy.
+        Instruction::Operands newOps = decodedInstr.getOperands();
+        
         const auto opCount = decodedInstr.getOperandCount();
         const auto& vis = decodedInstr.getOperandsVisibility();
         for (size_t i = 0; i < opCount; i++)
         {
             if (vis.get(i) == Operand::Visibility::Hidden)
+            {
                 continue;
+            }
 
             const auto& opSrc = operands[i];
-            if (opSrc.holds<operands::Label>())
+            if (opSrc.holds<Label>())
             {
                 newOps[i] = opSrc;
             }
             else if (const auto* opMem = opSrc.getIf<Mem>(); opMem != nullptr)
             {
-                // FIXME: Handle labels in memory operands.
-                auto& decodedMemOp = newOps[i].get<Mem>();
+                // NOLINTNEXTLINE
+                const auto& decodedMemOp = newOps[i].get<Mem>();
 
                 if (opMem->hasLabel())
                 {
@@ -98,8 +100,8 @@ namespace zasm
             }
             if (opSrc.holds<Imm>())
             {
-                const auto id = decodedInstr.getMnemonic();
-                if (i == 0 && isImmediateControlFlow(id))
+                const auto mnemonic = decodedInstr.getMnemonic();
+                if (i == 0 && isImmediateControlFlow(mnemonic))
                 {
                     newOps[i] = opSrc;
                 }
@@ -107,7 +109,7 @@ namespace zasm
         }
 
         return zasm::Instruction(
-            decodedInstr.getAttribs(), decodedInstr.getMnemonic(), opCount, newOps, decodedInstr.getAccess(), vis,
+            decodedInstr.getAttribs(), decodedInstr.getMnemonic(), opCount, newOps, decodedInstr.getOperandsAccess(), vis,
             decodedInstr.getCPUFlags(), decodedInstr.getCategory(), decodedInstr.getLength());
     }
 

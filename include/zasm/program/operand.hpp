@@ -13,7 +13,7 @@ namespace zasm
 {
     namespace detail
     {
-        enum class OperandVisibility : uint8_t
+        enum class OperandVisibility : std::uint8_t
         {
             Invalid = 0,
             Explicit,
@@ -21,18 +21,18 @@ namespace zasm
             Hidden,
         };
 
-        enum class OperandAccess : uint8_t
+        enum class OperandAccess : std::uint8_t
         {
             None = 0,
 
             // The operand is read by the instruction.
-            Read = (1u << 0),
+            Read = (1U << 0),
             // The operand is written by the instruction (must write).
-            Write = (1u << 1),
+            Write = (1U << 1),
             // The operand is conditionally written by the instruction (may write).
-            CondRead = (1u << 2),
+            CondRead = (1U << 2),
             // The operand is conditionally written by the instruction (may write).
-            CondWrite = (1u << 3),
+            CondWrite = (1U << 3),
 
             // The operand is read (must read) and written by the instruction (must write).
             ReadWrite = (Read | Write),
@@ -56,6 +56,10 @@ namespace zasm
     public:
         struct None
         {
+            static BitSize getBitSize(MachineMode /*unused*/) noexcept
+            {
+                return BitSize::_0;
+            }
         };
 
     private:
@@ -66,42 +70,141 @@ namespace zasm
         using Visibility = detail::OperandVisibility;
         using Access = detail::OperandAccess;
 
-    public:
         constexpr Operand() noexcept
             : _data{ None{} }
         {
         }
+
+        constexpr Operand(const Operand& other) noexcept
+
+            = default;
+
         constexpr Operand(Operand&& other) noexcept
             : _data{ std::move(other._data) }
         {
         }
-        constexpr Operand(const Operand& other) noexcept
-            : _data{ other._data }
+
+        constexpr Operand(None&& other) noexcept
+            : _data{ other }
         {
         }
 
-        template<typename T>
-        constexpr Operand(const T& val) noexcept
-            : _data{ val }
+        constexpr Operand(const None& other) noexcept
+            : _data{ other }
         {
         }
 
-        template<typename T>
-        constexpr Operand(T&& val) noexcept
-            : _data{ std::move(val) }
+        constexpr Operand(Reg&& other) noexcept
+            : _data{ std::move(other) }
+        {
+        }
+
+        constexpr Operand(const Reg& other) noexcept
+            : _data{ other }
+        {
+        }
+
+        constexpr Operand(Mem&& other) noexcept
+            : _data{ std::move(other) }
+        {
+        }
+
+        constexpr Operand(const Mem& other) noexcept
+            : _data{ other }
+        {
+        }
+
+        constexpr Operand(Imm&& other) noexcept
+            : _data{ std::move(other) }
+        {
+        }
+
+        constexpr Operand(const Imm& other) noexcept
+            : _data{ other }
+        {
+        }
+
+        constexpr Operand(Label&& other) noexcept
+            : _data{ std::move(other) }
+        {
+        }
+
+        constexpr Operand(const Label& other) noexcept
+            : _data{ other }
         {
         }
 
         Operand& operator=(Operand&& other) noexcept
         {
-            _data = std::move(other._data);
+            _data = other._data;
             return *this;
         }
 
-        Operand& operator=(const Operand& other) noexcept
+        Operand& operator=(const Operand& other) noexcept = default;
+
+        Operand& operator=(None&& other) noexcept
         {
-            _data = other._data;
+            _data = other;
             return *this;
+        }
+
+        Operand& operator=(const None& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(Reg&& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(const Reg& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(Mem&& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(const Mem& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(Imm&& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(const Imm& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(Label&& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        Operand& operator=(const Label& other) noexcept
+        {
+            _data = other;
+            return *this;
+        }
+
+        bool isEmpty() const noexcept
+        {
+            return std::holds_alternative<Operand::None>(_data);
         }
 
         template<typename T> const T& get() const
@@ -142,9 +245,19 @@ namespace zasm
             return false;
         }
 
-        template<typename F> auto visit(F&& f) const
+        constexpr std::size_t getTypeIndex() const noexcept
+        {
+            return _data.index();
+        }
+
+        template<typename F> constexpr auto visit(F&& f) const
         {
             return std::visit(std::forward<F>(f), _data);
+        }
+
+        BitSize getBitSize(MachineMode mode) const noexcept
+        {
+            return visit([mode](auto&& op) { return op.getBitSize(mode); });
         }
     };
 

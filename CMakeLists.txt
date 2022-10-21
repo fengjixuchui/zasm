@@ -62,6 +62,8 @@ if(MSVC) # msvc
 	target_compile_options(zasm_common INTERFACE
 		"/bigobj"
 		"/MP"
+		"/W3"
+		"/permissive-"
 	)
 endif()
 
@@ -76,8 +78,8 @@ list(APPEND zasm_SOURCES
 	"src/zasm/src/decoder/decoder.cpp"
 	"src/zasm/src/encoder/encoder.cpp"
 	"src/zasm/src/encoder/generator.cpp"
+	"src/zasm/src/formatter/formatter.cpp"
 	"src/zasm/src/program/data.cpp"
-	"src/zasm/src/program/formatter.cpp"
 	"src/zasm/src/program/instruction.cpp"
 	"src/zasm/src/program/program.cpp"
 	"src/zasm/src/program/register.cpp"
@@ -100,15 +102,16 @@ list(APPEND zasm_SOURCES
 	"include/zasm/core/stringpool.hpp"
 	"include/zasm/decoder/decoder.hpp"
 	"include/zasm/encoder/encoder.hpp"
+	"include/zasm/formatter/formatter.hpp"
 	"include/zasm/program/data.hpp"
 	"include/zasm/program/embeddedlabel.hpp"
-	"include/zasm/program/formatter.hpp"
 	"include/zasm/program/immediate.hpp"
 	"include/zasm/program/instruction.hpp"
 	"include/zasm/program/label.hpp"
 	"include/zasm/program/labeldata.hpp"
 	"include/zasm/program/memory.hpp"
 	"include/zasm/program/node.hpp"
+	"include/zasm/program/observer.hpp"
 	"include/zasm/program/operand.hpp"
 	"include/zasm/program/program.hpp"
 	"include/zasm/program/register.hpp"
@@ -217,10 +220,13 @@ if(ZASM_BUILD_TESTS) # tests
 	list(APPEND tests_SOURCES
 		"src/tests/main.cpp"
 		"src/tests/tests/tests.assembler.cpp"
+		"src/tests/tests/tests.decoder.cpp"
 		"src/tests/tests/tests.externals.cpp"
 		"src/tests/tests/tests.formatter.cpp"
 		"src/tests/tests/tests.imports.cpp"
+		"src/tests/tests/tests.instruction.cpp"
 		"src/tests/tests/tests.instructions.x64.cpp"
+		"src/tests/tests/tests.observer.cpp"
 		"src/tests/tests/tests.packed.cpp"
 		"src/tests/tests/tests.program.cpp"
 		"src/tests/tests/tests.registers.cpp"
@@ -269,6 +275,7 @@ if(ZASM_BUILD_TESTS) # tests
 
 	list(APPEND benchmarks_SOURCES
 		"src/benchmark/benchmarks/benchmark.assembler.cpp"
+		"src/benchmark/benchmarks/benchmark.formatter.cpp"
 		"src/benchmark/benchmarks/benchmark.serialization.cpp"
 		"src/benchmark/benchmarks/benchmark.stringpool.cpp"
 		"src/benchmark/main.cpp"

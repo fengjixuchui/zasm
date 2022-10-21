@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <variant>
 
 namespace zasm
@@ -38,45 +39,59 @@ namespace zasm
             : data{ std::move(val) }
         {
         }
+
         constexpr operator bool() const noexcept
         {
             return hasValue();
         }
+
         constexpr bool hasValue() const noexcept
         {
             return std::holds_alternative<TSuccess>(data);
         }
-        constexpr const TFailure& error() const
+
+        constexpr const TFailure& error() const noexcept
         {
-            return std::get<::zasm::detail::Unexpected<TFailure>>(data).failure;
+            assert(!hasValue());
+            return std::get_if<::zasm::detail::Unexpected<TFailure>>(&data)->failure;
         }
-        constexpr TSuccess& value()
+
+        constexpr TSuccess& value() noexcept
         {
-            return std::get<TSuccess>(data);
+            assert(hasValue());
+            return *std::get_if<TSuccess>(&data);
         }
-        constexpr const TSuccess& value() const
+
+        constexpr const TSuccess& value() const noexcept
         {
-            return std::get<TSuccess>(data);
+            assert(hasValue());
+            return *std::get_if<TSuccess>(&data);
         }
-        constexpr TSuccess& operator*()
+
+        constexpr TSuccess& operator*() noexcept
         {
-            return std::get<TSuccess>(data);
+            return value();
         }
-        constexpr const TSuccess& operator*() const
+
+        constexpr const TSuccess& operator*() const noexcept
         {
-            return std::get<TSuccess>(data);
+            return value();
         }
-        constexpr TSuccess* operator->()
+
+        constexpr TSuccess* operator->() noexcept
         {
-            return &std::get<TSuccess>(data);
+            assert(hasValue());
+            return std::get_if<TSuccess>(&data);
         }
-        constexpr const TSuccess* operator->() const
+
+        constexpr const TSuccess* operator->() const noexcept
         {
-            return &std::get<TSuccess>(data);
+            assert(hasValue());
+            return std::get_if<TSuccess>(&data);
         }
     };
 
-    template<typename T> constexpr ::zasm::detail::Unexpected<T> makeUnexpected(const T& val) noexcept
+    template<typename T> inline constexpr ::zasm::detail::Unexpected<T> makeUnexpected(const T& val) noexcept
     {
         return ::zasm::detail::Unexpected<T>(val);
     }

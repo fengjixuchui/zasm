@@ -219,13 +219,16 @@ static void decodeToAssembler()
         auto decoderRes = decoder.decode(code.data() + bytesDecoded, code.size() - bytesDecoded, curAddress);
         if (!decoderRes)
         {
-            std::cout << "Failed to decode at " << std::hex << curAddress << ", " << decoderRes.error() << "\n";
+            std::cout << "Failed to decode at " << std::hex << curAddress << ", " << getErrorName(decoderRes.error()) << "\n";
             return;
         }
 
         const auto& instr = decoderRes.value();
-        assembler.fromInstruction(instr);
-
+        if (auto res = assembler.emit(instr); res != zasm::Error::None)
+        {
+            std::cout << "Failed to emit instruction " << std::hex << curAddress << ", " << getErrorName(res) << "\n";
+        }
+        
         bytesDecoded += instr.getLength();
     }
 
@@ -284,10 +287,10 @@ static void sectionTest()
 
 int main()
 {
+    decodeToAssembler();
     testPacked();
     sectionTest();
     // quickLeakTest();
-    // decodeToAssembler();
     // quickTest();
     //  measureSerializePerformance();
 

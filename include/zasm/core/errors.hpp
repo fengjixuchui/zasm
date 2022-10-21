@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cassert>
-#include <ostream>
+#include <cstdint>
 
 namespace zasm
 {
-    enum class Error
+    enum class Error : std::uint32_t
     {
         None = 0,
         // Generic.
@@ -31,7 +31,7 @@ namespace zasm
         ImpossibleRelocation,
     };
 
-    inline constexpr const char* getErrorName(Error err) noexcept
+    static constexpr const char* getErrorName(Error err) noexcept
     {
 #define ERROR_STRING(e)                                                                                                        \
     case e:                                                                                                                    \
@@ -63,11 +63,4 @@ namespace zasm
         return nullptr;
     }
 
-    // gtest support.
-    inline std::ostream& operator<<(std::ostream& os, const Error& err)
-    {
-        return os << zasm::getErrorName(err);
-    }
-
 } // namespace zasm
-
