@@ -11,12 +11,28 @@
 
 namespace zasm
 {
-    class Instruction
+    class Mnemonic
+    {
+        std::uint16_t _id{};
+
+    public:
+        constexpr Mnemonic() = default;
+        constexpr Mnemonic(std::uint16_t id)
+            : _id{ id }
+        {
+        }
+
+        constexpr operator std::uint32_t() const
+        {
+            return _id;
+        }
+    };
+
+    class Instruction final
     {
         static constexpr std::size_t kMaxOperands = 10;
 
     public:
-        enum class Mnemonic : std::uint16_t;
         enum class Encoding : std::uint8_t;
         enum class Attribs : std::uint16_t;
         enum class Category : std::uint8_t;
@@ -198,7 +214,7 @@ namespace zasm
         /// <summary>
         /// Returns the amount of operands that are not hidden.
         /// </summary>
-        constexpr std::size_t getExplicitOperandCount() const noexcept
+        constexpr std::size_t getVisibleOperandCount() const noexcept
         {
             auto opCount = _opCount;
             while (opCount > 0 && _opsVisibility.get(opCount - 1) == Operand::Visibility::Hidden)
@@ -302,12 +318,13 @@ namespace zasm
 
             if (index < _opCount)
             {
-                // Allow to keep the meta data valid if the operand type is the same.
-                if (val.getTypeIndex() != _operands[index].getTypeIndex())
+                auto& op = _operands[index];
+                if (!op.isExchangableType(val))
                 {
+                    // Some operand types can be exchanged without invalidating the signature.
                     _metaDataValid = false;
                 }
-                _operands[index] = val;
+                op = val;
             }
 
             return *this;
@@ -320,8 +337,6 @@ namespace zasm
 
         constexpr Operand::Visibility getOperandVisibility(std::size_t index) const noexcept
         {
-            assert(_metaDataValid == true);
-
             if (index >= _opCount || !_metaDataValid)
             {
                 return Operand::Visibility::Invalid;
@@ -332,37 +347,16 @@ namespace zasm
 
         constexpr bool isOperandHidden(std::size_t index) const noexcept
         {
-            assert(_metaDataValid == true);
-
-            if (index >= _opCount)
-            {
-                return true;
-            }
-
             return getOperandVisibility(index) == Operand::Visibility::Hidden;
         }
 
         constexpr bool isOperandExplicit(std::size_t index) const noexcept
         {
-            assert(_metaDataValid == true);
-
-            if (index >= _opCount)
-            {
-                return false;
-            }
-
             return getOperandVisibility(index) == Operand::Visibility::Explicit;
         }
 
         constexpr bool isOperandImplicit(std::size_t index) const noexcept
         {
-            assert(_metaDataValid == true);
-
-            if (index >= _opCount)
-            {
-                return false;
-            }
-
             return getOperandVisibility(index) == Operand::Visibility::Implicit;
         }
 

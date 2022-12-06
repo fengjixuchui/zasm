@@ -8,7 +8,7 @@ namespace zasm::x86
 {
     Assembler::Assembler(Program& program)
         : _program(program)
-        , _generator(std::make_unique<InstrGenerator>(program.getMode()))
+        , _generator(new InstrGenerator(program.getMode()))
     {
         _program.addObserver(*this);
     }
@@ -16,6 +16,8 @@ namespace zasm::x86
     Assembler::~Assembler()
     {
         _program.removeObserver(*this);
+        delete _generator;
+        _generator = nullptr;
     }
 
     void Assembler::setCursor(const Node* pos) noexcept
@@ -117,11 +119,9 @@ namespace zasm::x86
         return Error::None;
     }
 
-    Error Assembler::emit(
-        Attribs attribs, Mnemonic mnemonic, std::size_t numOps, std::array<Operand, ZYDIS_ENCODER_MAX_OPERANDS>&& ops)
+    Error Assembler::emit(Attribs attribs, zasm::Mnemonic mnemonic, std::size_t numOps, const Operand* ops)
     {
-        auto genResult = _generator->generate(
-            static_cast<Instruction::Attribs>(attribs), static_cast<Instruction::Mnemonic>(mnemonic), numOps, std::move(ops));
+        auto genResult = _generator->generate(static_cast<Instruction::Attribs>(attribs), mnemonic, numOps, ops);
         if (!genResult)
         {
             return genResult.error();
@@ -135,14 +135,10 @@ namespace zasm::x86
 
     Error Assembler::emit(const Instruction& instr)
     {
-        std::array<Operand, ZYDIS_ENCODER_MAX_OPERANDS> ops;
+        const auto& ops = instr.getOperands();
+        const auto numOps = std::min<std::size_t>(ZYDIS_ENCODER_MAX_OPERANDS, instr.getVisibleOperandCount());
 
-        auto numOps = std::min<std::size_t>(ZYDIS_ENCODER_MAX_OPERANDS, instr.getExplicitOperandCount());
-        std::copy_n(std::begin(instr.getOperands()), numOps, std::begin(ops));
-
-        return emit(
-            static_cast<x86::Attribs>(instr.getAttribs()), static_cast<x86::Mnemonic>(instr.getMnemonic()), numOps,
-            std::move(ops));
+        return emit(static_cast<x86::Attribs>(instr.getAttribs()), instr.getMnemonic(), numOps, ops.data());
     }
 
     Error Assembler::embedLabel(Label label)

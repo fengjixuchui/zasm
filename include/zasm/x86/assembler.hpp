@@ -25,7 +25,7 @@ namespace zasm::x86
         Program& _program;
         const Node* _cursor{};
         Attribs _attribState{};
-        std::unique_ptr<InstrGenerator> _generator{};
+        InstrGenerator* _generator{};
 
     public:
         Assembler(Program& _program);
@@ -104,15 +104,15 @@ namespace zasm::x86
         Error embedLabelRel(Label label, Label relativeTo, BitSize size);
 
     public:
-        template<typename... TArgs> Error emit(Mnemonic mnemonic, TArgs&&... args)
+        template<typename... TArgs> Error emit(zasm::Mnemonic mnemonic, TArgs&&... args)
         {
             const auto attribs = _attribState;
             _attribState = Attribs::None;
-            return emit(attribs, mnemonic, sizeof...(TArgs), { args... });
+            std::array<Operand, sizeof...(TArgs)> ops{ args... };
+            return emit(attribs, mnemonic, ops.size(), ops.data());
         }
 
-        Error emit(
-            Attribs attribs, Mnemonic mnemonic, std::size_t numOps, std::array<Operand, ZYDIS_ENCODER_MAX_OPERANDS>&& ops);
+        Error emit(Attribs attribs, zasm::Mnemonic mnemonic, std::size_t numOps, const Operand* ops);
         Error emit(const Instruction& instr);
 
     private:
@@ -149,6 +149,36 @@ namespace zasm::x86
         Assembler& lock() noexcept
         {
             addAttrib(Attribs::Lock);
+            return *this;
+        }
+
+        Assembler& rep() noexcept
+        {
+            addAttrib(Attribs::Rep);
+            return *this;
+        }
+
+        Assembler& repe() noexcept
+        {
+            addAttrib(Attribs::Repe);
+            return *this;
+        }
+
+        Assembler& repne() noexcept
+        {
+            addAttrib(Attribs::Repne);
+            return *this;
+        }
+
+        Assembler& xacquire() noexcept
+        {
+            addAttrib(Attribs::Xacquire);
+            return *this;
+        }
+
+        Assembler& xrelease() noexcept
+        {
+            addAttrib(Attribs::Xrelease);
             return *this;
         }
 

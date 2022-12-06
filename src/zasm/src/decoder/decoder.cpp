@@ -13,6 +13,11 @@ namespace zasm
         return Reg{ static_cast<Reg::Id>(reg) };
     }
 
+    static constexpr bool isRipRelative(const ZydisDecodedOperandMem& mem)
+    {
+        return mem.base == ZYDIS_REGISTER_RIP || mem.base == ZYDIS_REGISTER_EIP || mem.base == ZYDIS_REGISTER_IP;
+    }
+
     static Operand getOperand(
         const ZydisDecodedInstruction& instr, const ZydisDecodedOperand& srcOp, std::uint64_t address) noexcept
     {
@@ -26,8 +31,15 @@ namespace zasm
         }
         if (srcOp.type == ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY)
         {
-            return Mem{ toBitSize(srcOp.size),   getReg(srcOp.mem.segment), getReg(srcOp.mem.base),
-                        getReg(srcOp.mem.index), srcOp.mem.scale,           srcOp.mem.disp.value };
+            auto baseReg = getReg(srcOp.mem.base);
+            auto disp = srcOp.mem.disp.value;
+            if (isRipRelative(srcOp.mem))
+            {
+                // Keep RIP as a hint to make this relative.
+                disp += static_cast<std::int64_t>(address + instr.length);
+            }
+            return Mem{ toBitSize(srcOp.size),   getReg(srcOp.mem.segment), baseReg,
+                        getReg(srcOp.mem.index), srcOp.mem.scale,           disp };
         }
         if (srcOp.type == ZydisOperandType::ZYDIS_OPERAND_TYPE_IMMEDIATE)
         {
@@ -184,9 +196,7 @@ namespace zasm
         const auto attribs = getAttribs(instr.attributes);
         const auto category = getCategory(instr.meta.category);
 
-        return Instruction(
-            attribs, static_cast<Instruction::Mnemonic>(instr.mnemonic), instr.operand_count, ops, access, vis, flags, category,
-            instr.length);
+        return Instruction(attribs, instr.mnemonic, instr.operand_count, ops, access, vis, flags, category, instr.length);
     }
 
 } // namespace zasm
