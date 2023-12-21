@@ -28,7 +28,19 @@ namespace zasm
         std::unique_ptr<detail::ProgramState> _state;
 
     public:
+        /// <summary>
+        /// Constructs an empty program with no machine mode assigned. It is important
+        /// that a machine mode is set before operating with instructions otherwise it may
+        /// lead to undefined behavior. This constructor is useful for save/restore situations.
+        /// </summary>
+        Program();
+
+        /// <summary>
+        /// Constructs an empty program with the specified machine mode.
+        /// </summary>
+        /// <param name="mode">Machine Mode</param>
         Program(MachineMode mode);
+
         Program(const Program&) = delete;
         Program(Program&& other) noexcept;
         ~Program();
@@ -36,7 +48,17 @@ namespace zasm
         Program& operator=(const Program&) = delete;
         Program& operator=(Program&& other) noexcept;
 
+        /// <summary>
+        /// Gets the current machine mode.
+        /// </summary>
+        /// <returns>Machine mode</returns>
         MachineMode getMode() const noexcept;
+
+        /// <summary>
+        /// Sets the current machine mode.
+        /// </summary>
+        /// <param name="mode">New mode</param>
+        void setMode(MachineMode mode) noexcept;
 
         /// <summary>
         /// This is primarily used by other components, this should not be directly used.
@@ -62,26 +84,26 @@ namespace zasm
         /// <summary>
         /// Returns the first node in the Program, if none exists it will return null.
         /// </summary>
-        const Node* getHead() const noexcept;
+        Node* getHead() const noexcept;
 
         /// <summary>
         /// Returns the last node in the Program, if none exists it will return null.
         /// </summary>
-        const Node* getTail() const noexcept;
+        Node* getTail() const noexcept;
 
         /// <summary>
         /// Prepends the specified node to the start of the Program.
         /// </summary>
         /// <param name="node">The node to prepend</param>
         /// <returns>The newly inserted node</returns>
-        const Node* prepend(const Node* node) noexcept;
+        Node* prepend(Node* node) noexcept;
 
         /// <summary>
         /// Appends the specified node to the end of the Program.
         /// </summary>
         /// <param name="node">The node to append</param>
         /// <returns>The newly inserted node</returns>
-        const Node* append(const Node* node) noexcept;
+        Node* append(Node* node) noexcept;
 
         /// <summary>
         /// Inserts the node into the Program before the specified position.
@@ -89,7 +111,7 @@ namespace zasm
         /// <param name="pos">Position of insertion</param>
         /// <param name="node">The node to insert</param>
         /// <returns>The newly inserted node</returns>
-        const Node* insertBefore(const Node* pos, const Node* node) noexcept;
+        Node* insertBefore(Node* pos, Node* node) noexcept;
 
         /// <summary>
         /// Inserts the node into the program after the specified position.
@@ -97,7 +119,7 @@ namespace zasm
         /// <param name="pos">Position of insertion</param>
         /// <param name="node">The node to insert</param>
         /// <returns>The newly inserted node</returns>
-        const Node* insertAfter(const Node* pos, const Node* node) noexcept;
+        Node* insertAfter(Node* pos, Node* node) noexcept;
 
         /// <summary>
         /// Detaches the node from the program, the node will be not destroyed this just unlinks it from the
@@ -106,7 +128,7 @@ namespace zasm
         /// <param name="node">The node to detach</param>
         /// <returns>The next node</returns>
         /// <note>Nodes that are detached are not tracked, make sure they don't get lost to avoid memory leaks</note>
-        const Node* detach(const Node* node) noexcept;
+        Node* detach(Node* node) noexcept;
 
         /// <summary>
         /// Moves the node after the specified position, if the node is unlinked it will act as insert.
@@ -114,7 +136,7 @@ namespace zasm
         /// <param name="pos">Position of node to move after</param>
         /// <param name="node">The node to move</param>
         /// <returns>The moved node</returns>
-        const Node* moveAfter(const Node* pos, const Node* node) noexcept;
+        Node* moveAfter(Node* pos, Node* node) noexcept;
 
         /// <summary>
         /// Moves the node before the specified position, if the node is unlinked it will act as insert.
@@ -122,14 +144,14 @@ namespace zasm
         /// <param name="pos">Position of node to move before</param>
         /// <param name="node">The node to move</param>
         /// <returns>The moved node</returns>
-        const Node* moveBefore(const Node* pos, const Node* node) noexcept;
+        Node* moveBefore(Node* pos, Node* node) noexcept;
 
         /// <summary>
         /// Releases the memory of node back into the pool, the memory is considered invalid after the
         /// call.
         /// </summary>
         /// <param name="node">The node to destroy</param>
-        void destroy(const Node* node);
+        void destroy(Node* node);
 
         /// <summary>
         /// Returns the current amount of nodes in the list.
@@ -155,17 +177,29 @@ namespace zasm
         /// <returns>Label</returns>
         Label getEntryPoint() const noexcept;
 
+        /// <summary>
+        /// Looks for a node with the specified id in the program and returns it.
+        /// </summary>
+        /// <param name="id">Id of the node</param>
+        /// <returns>Node with the id or null when not found</returns>
+        Node* getNodeById(Node::Id id) const noexcept;
+
     public:
         /// <summary>
         /// Allocates a new unlinked node with containing the specified value.
         /// </summary>
         /// <param name="value">The data to place inside the node</param>
         /// <returns>Newly allocated node containing value</returns>
-        const Node* createNode(const Instruction& instr);
-        const Node* createNode(Instruction&& instr);
-        const Node* createNode(const Data& data);
-        const Node* createNode(Data&& data);
-        const Node* createNode(const EmbeddedLabel& label);
+        Node* createNode(const Label& label);
+        Node* createNode(const Section& section);
+        Node* createNode(const Sentinel& sentinel);
+        Node* createNode(const Instruction& instr);
+        Node* createNode(Instruction&& instr);
+        Node* createNode(const Data& data);
+        Node* createNode(Data&& data);
+        Node* createNode(const Align& align);
+        Node* createNode(Align&& data);
+        Node* createNode(const EmbeddedLabel& label);
 
     public:
         /// <summary>
@@ -181,7 +215,7 @@ namespace zasm
         /// </summary>
         /// <param name="label">The label to bind</param>
         /// <returns>The new node which contains the label</returns>
-        Expected<const Node*, Error> bindLabel(const Label& label);
+        Expected<Node*, Error> bindLabel(const Label& label);
 
         /// <summary>
         /// Creates a new named external label that can be referenced and later
@@ -238,7 +272,7 @@ namespace zasm
         /// </summary>
         /// <param name="label">The label to bind</param>
         /// <returns>The new node which contains the section or Error</returns>
-        Expected<const Node*, Error> bindSection(const Section& section);
+        Expected<Node*, Error> bindSection(const Section& section);
 
         /// <summary>
         /// Gets the section name.

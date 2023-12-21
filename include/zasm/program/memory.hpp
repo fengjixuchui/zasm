@@ -43,6 +43,17 @@ namespace zasm
         {
         }
 
+        constexpr bool operator==(const Mem& other) const noexcept
+        {
+            return _bitSize == other._bitSize && _segBaseIndex == other._segBaseIndex && _scale == other._scale
+                && _disp == other._disp && _label == other._label;
+        }
+
+        constexpr bool operator!=(const Mem& other) const noexcept
+        {
+            return !(*this == other);
+        }
+
         constexpr Reg getSegment() const noexcept
         {
             return Reg{ _segBaseIndex.get<0>() };
@@ -78,12 +89,6 @@ namespace zasm
 
         constexpr uint8_t getScale() const noexcept
         {
-            // In case no index is assigned scale has to be zero.
-            if (_segBaseIndex.get<1>() == Reg::Id::None)
-            {
-                return 0;
-            }
-
             return _scale;
         }
 
@@ -104,7 +109,7 @@ namespace zasm
             return *this;
         }
 
-        BitSize getBitSize() const noexcept
+        constexpr BitSize getBitSize() const noexcept
         {
             return _bitSize;
         }

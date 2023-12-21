@@ -29,12 +29,17 @@ namespace zasm
     };
 
     // A small buffer which holds the bytes of a single encoded instruction and the length.
-    struct EncoderResult
+    struct EncoderBuffer
     {
         static constexpr std::size_t kMaxInstructionSize = 15;
 
         std::array<std::uint8_t, kMaxInstructionSize> data{};
         std::uint8_t length{};
+    };
+
+    struct EncoderResult
+    {
+        EncoderBuffer buffer{};
         RelocationType relocKind{};
         RelocationData relocData{};
         Label::Id relocLabel{ Label::Id::Invalid };
@@ -45,7 +50,8 @@ namespace zasm
     // Encodes with the requested instruction without a context and will use temporary
     // values for operands like labels and rip-rel addressing.
     Expected<EncoderResult, Error> encode(
-        MachineMode mode, Instruction::Attribs attribs, Mnemonic mnemonic, std::size_t numOps, const Operand* operands);
+        MachineMode mode, Instruction::Attribs attribs, Instruction::Mnemonic mnemonic, std::size_t numOps,
+        const Operand* operands);
 
     // Encodes with full context. This function still allows labels to be unbound and will not error
     // instead a temporary value be usually encoded. It is expected for the serialization to handle this

@@ -5,17 +5,15 @@
 #include <cstddef>
 #include <memory>
 #include <zasm/core/errors.hpp>
-#include <zasm/program/instruction.hpp>
+#include <zasm/program/node.hpp>
 #include <zasm/program/observer.hpp>
-#include <zasm/program/operand.hpp>
-#include <zasm/program/section.hpp>
-#include <zasm/x86/instruction.hpp>
+#include <zasm/x86/meta.hpp>
+#include <zasm/x86/mnemonic.hpp>
 
 namespace zasm
 {
     class Program;
     class Node;
-    class InstrGenerator;
 } // namespace zasm
 
 namespace zasm::x86
@@ -23,9 +21,8 @@ namespace zasm::x86
     class Assembler final : public Emitter<Assembler>, public Observer
     {
         Program& _program;
-        const Node* _cursor{};
-        Attribs _attribState{};
-        InstrGenerator* _generator{};
+        Node* _cursor{};
+        InstrAttribs _attribState{};
 
     public:
         Assembler(Program& _program);
@@ -35,13 +32,13 @@ namespace zasm::x86
         /// Sets the node at where the next node will be inserted after.
         /// </summary>
         /// <param name="pos">The position to insert the next node after</param>
-        void setCursor(const Node* pos) noexcept;
+        void setCursor(Node* pos) noexcept;
 
         /// <summary>
         /// Returns the current node, this is typically the last node created.
         /// </summary>
         /// <returns>Position in Program</returns>
-        const Node* getCursor() const noexcept;
+        Node* getCursor() const noexcept;
 
     public:
         /// <summary>
@@ -88,6 +85,13 @@ namespace zasm::x86
         /// <returns>Error</returns>
         Error embed(const void* ptr, std::size_t len);
 
+        /// <summary>
+        /// Creates a new alignment node that will align the next node to the specified alignment when
+        /// serialized. 
+        /// To align code the type should be Align::Type::Code otherwise Align::Type::Data
+        /// </summary>
+        Error align(Align::Type type, std::uint32_t align);
+
         // NOLINTNEXTLINE
         template<std::size_t N> Error embed(const char (&str)[N])
         {
@@ -104,7 +108,7 @@ namespace zasm::x86
         Error embedLabelRel(Label label, Label relativeTo, BitSize size);
 
     public:
-        template<typename... TArgs> Error emit(zasm::Mnemonic mnemonic, TArgs&&... args)
+        template<typename... TArgs> Error emit(Instruction::Mnemonic mnemonic, TArgs&&... args)
         {
             const auto attribs = _attribState;
             _attribState = Attribs::None;
@@ -112,11 +116,11 @@ namespace zasm::x86
             return emit(attribs, mnemonic, ops.size(), ops.data());
         }
 
-        Error emit(Attribs attribs, zasm::Mnemonic mnemonic, std::size_t numOps, const Operand* ops);
+        Error emit(Instruction::Attribs attribs, Instruction::Mnemonic mnemonic, std::size_t numOps, const Operand* ops);
         Error emit(const Instruction& instr);
 
     private:
-        void addAttrib(Attribs attrib) noexcept
+        void addAttrib(Instruction::Attribs attrib) noexcept
         {
             _attribState = _attribState | attrib;
         }
@@ -187,8 +191,8 @@ namespace zasm::x86
         /// Observer events, this ensures the cursor remains valid.
         /// </summary>
         /// <param name="node"></param>
-        void onNodeDetach(const Node* node) noexcept override;
-        void onNodeDestroy(const Node* node) noexcept override;
+        void onNodeDetach(Node* node) noexcept override;
+        void onNodeDestroy(Node* node) noexcept override;
     };
 
 } // namespace zasm::x86

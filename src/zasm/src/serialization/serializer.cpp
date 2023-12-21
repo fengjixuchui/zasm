@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <iterator>
 
 namespace zasm
@@ -56,21 +57,95 @@ namespace zasm
     }
 
     static Error serializeNode(
-        [[maybe_unused]] detail::ProgramState& program, SerializeContext& state, [[maybe_unused]] const NodePoint& node)
+        [[maybe_unused]] detail::ProgramState& program, SerializeContext& state, [[maybe_unused]] const Sentinel& node)
     {
         auto& ctx = state.ctx;
 
-        if (ctx.nodeIndex >= ctx.nodes.size())
-        {
-            ctx.nodes.push_back({ ctx.offset, 0 });
-        }
-        else
-        {
-            auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
-            nodeEntry.offset = ctx.offset;
-            nodeEntry.address = ctx.va;
-        }
+        auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+        nodeEntry.offset = ctx.offset;
+        nodeEntry.address = ctx.va;
         ctx.nodeIndex++;
+
+        return Error::None;
+    }
+
+    static constexpr auto kX86NopTable = std::array<std::array<std::uint8_t, 8>, 9>{ {
+        {},
+        { 0x90 },
+        { 0x66, 0x90 },
+        { 0x0f, 0x1f, 0x00 },
+        { 0x0f, 0x1f, 0x40, 0x00 },
+        { 0x0f, 0x1f, 0x44, 0x00, 0x00 },
+        { 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00 },
+        { 0x0f, 0x1f, 0x80, 0x00, 0x00, 0x00, 0x00 },
+        { 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 },
+    } };
+
+    static constexpr auto kX86AlignTable = std::array<std::array<std::uint8_t, 8>, 9>{ {
+        {},
+        { 0xCC },
+        { 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC, 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC },
+        { 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC },
+    } };
+
+    static Error serializeNode([[maybe_unused]] detail::ProgramState& program, SerializeContext& state, const Align& node)
+    {
+        auto& ctx = state.ctx;
+
+        auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+        ctx.nodeIndex++;
+
+        nodeEntry.offset = ctx.offset;
+        nodeEntry.address = ctx.va;
+
+        const auto& table = std::invoke([&]() {
+            // TODO: Add support for different modes one day.
+            if (node.getType() == Align::Type::Code)
+                return kX86NopTable;
+            else
+                return kX86AlignTable;
+        });
+
+        const auto alignedVA = math::alignTo<std::int64_t>(ctx.va, node.getAlign());
+
+        assert(alignedVA - ctx.va < std::numeric_limits<std::int32_t>::max());
+        const auto alignSize = static_cast<std::int32_t>(alignedVA - ctx.va);
+
+        for (auto alignBytesMissing = alignSize; alignBytesMissing > 0;)
+        {
+            const auto tableSize = static_cast<std::int32_t>(table.size());
+            const auto dataIndex = std::min<std::int32_t>(tableSize - 1, alignBytesMissing);
+            const auto& dataEntry = table[dataIndex];
+
+            auto& buffer = state.buffer;
+            buffer.insert(buffer.end(), std::begin(dataEntry), std::begin(dataEntry) + dataIndex);
+
+            alignBytesMissing -= dataIndex;
+        }
+
+        if (nodeEntry.length != 0)
+        {
+            if (alignSize < nodeEntry.length)
+            {
+                ctx.drift += nodeEntry.length - alignSize;
+            }
+            else if (alignSize > nodeEntry.length)
+            {
+                ctx.drift -= static_cast<std::int64_t>(alignSize) - nodeEntry.length;
+            }
+        }
+        nodeEntry.length = alignSize;
+
+        auto& sect = ctx.sections[ctx.sectionIndex];
+        sect.rawSize += alignSize;
+
+        ctx.va += alignSize;
+        ctx.offset += alignSize;
 
         return Error::None;
     }
@@ -87,35 +162,35 @@ namespace zasm
 
         {
             auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+            ctx.nodeIndex++;
+
             if (nodeEntry.length != 0)
             {
-                if (res->length < nodeEntry.length)
+                if (res->buffer.length < nodeEntry.length)
                 {
-                    ctx.drift += nodeEntry.length - static_cast<std::int64_t>(res->length);
+                    ctx.drift += nodeEntry.length - static_cast<std::int64_t>(res->buffer.length);
                 }
-                else if (res->length > nodeEntry.length)
+                else if (res->buffer.length > nodeEntry.length)
                 {
-                    ctx.drift -= static_cast<std::int64_t>(res->length) - nodeEntry.length;
+                    ctx.drift -= static_cast<std::int64_t>(res->buffer.length) - nodeEntry.length;
                 }
             }
-            nodeEntry.length = res->length;
+            nodeEntry.length = res->buffer.length;
             nodeEntry.offset = ctx.offset;
             nodeEntry.address = ctx.va;
             nodeEntry.relocKind = res->relocKind;
             nodeEntry.relocData = res->relocData;
             nodeEntry.relocLabel = res->relocLabel;
-
-            ctx.nodeIndex++;
         }
 
         auto& sect = ctx.sections[ctx.sectionIndex];
-        sect.rawSize += res->length;
+        sect.rawSize += res->buffer.length;
 
-        ctx.va += res->length;
-        ctx.offset += res->length;
+        ctx.va += res->buffer.length;
+        ctx.offset += res->buffer.length;
 
         auto& buffer = state.buffer;
-        buffer.insert(buffer.end(), std::begin(res->data), std::begin(res->data) + res->length);
+        buffer.insert(buffer.end(), std::begin(res->buffer.data), std::begin(res->buffer.data) + res->buffer.length);
 
         return Error::None;
     }
@@ -129,13 +204,12 @@ namespace zasm
 
         auto& ctx = state.ctx;
 
-        {
-            auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
-            nodeEntry.length = 0;
-            nodeEntry.offset = ctx.offset;
-            nodeEntry.address = ctx.va;
-            ctx.nodeIndex++;
-        }
+        auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+        ctx.nodeIndex++;
+
+        nodeEntry.length = 0;
+        nodeEntry.offset = ctx.offset;
+        nodeEntry.address = ctx.va;
 
         const auto labelIdx = static_cast<std::size_t>(label.getId());
         if (labelIdx >= prog.labels.size())
@@ -202,13 +276,12 @@ namespace zasm
             ctx.sectionIndex++;
         }
 
-        {
-            auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
-            nodeEntry.length = 0;
-            nodeEntry.offset = ctx.offset;
-            nodeEntry.address = ctx.va;
-            ctx.nodeIndex++;
-        }
+        auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+        ctx.nodeIndex++;
+
+        nodeEntry.length = 0;
+        nodeEntry.offset = ctx.offset;
+        nodeEntry.address = ctx.va;
 
         return Error::None;
     }
@@ -220,13 +293,12 @@ namespace zasm
         const auto* ptr = static_cast<const uint8_t*>(data.getData());
         const auto totalSize = static_cast<int32_t>(data.getTotalSize());
 
-        {
-            auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
-            nodeEntry.offset = ctx.offset;
-            nodeEntry.address = ctx.va;
-            nodeEntry.length = totalSize;
-            ctx.nodeIndex++;
-        }
+        auto& nodeEntry = ctx.nodes[ctx.nodeIndex];
+        ctx.nodeIndex++;
+
+        nodeEntry.offset = ctx.offset;
+        nodeEntry.address = ctx.va;
+        nodeEntry.length = totalSize;
 
         ctx.va += totalSize;
         ctx.offset += totalSize;

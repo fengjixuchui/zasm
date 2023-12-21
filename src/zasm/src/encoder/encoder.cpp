@@ -2,7 +2,8 @@
 
 #include "../program/program.state.hpp"
 #include "encoder.context.hpp"
-#include "zasm/x86/instruction.hpp"
+#include "zasm/x86/meta.hpp"
+#include "zasm/x86/mnemonic.hpp"
 
 #include <Zydis/Decoder.h>
 #include <Zydis/Encoder.h>
@@ -104,21 +105,22 @@ namespace zasm
         return (data.flags & LabelFlags::External) != LabelFlags::None;
     }
 
-    static int64_t getRelativeAddress(std::int64_t address, std::int64_t target, std::int32_t instrSize) noexcept
+    static constexpr int64_t getRelativeAddress(std::int64_t address, std::int64_t target, std::int32_t instrSize) noexcept
     {
         return target - (address + instrSize);
     }
 
-    static bool hasAttrib(x86::Attribs attribs, x86::Attribs other) noexcept
+    static constexpr bool hasAttrib(Instruction::Attribs attribs, Instruction::Attribs other) noexcept
     {
         return (attribs & other) != x86::Attribs::None;
     }
 
-    static ZydisInstructionAttributes getAttribs(x86::Attribs attribs) noexcept
+    static constexpr ZydisInstructionAttributes getAttribs(Instruction::Attribs attribs) noexcept
     {
         ZydisInstructionAttributes res{};
 
-        const auto translateAttrib = [&res, &attribs](x86::Attribs other, ZydisInstructionAttributes newAttrib) noexcept {
+        const auto translateAttrib = [&res,
+                                      &attribs](Instruction::Attribs other, ZydisInstructionAttributes newAttrib) noexcept {
             if (hasAttrib(attribs, other))
             {
                 res |= newAttrib;
@@ -136,7 +138,7 @@ namespace zasm
         return res;
     }
 
-    static std::pair<int64_t, ZydisBranchType> processRelAddress(
+    static constexpr std::pair<int64_t, ZydisBranchType> processRelAddress(
         const EncodeVariantsInfo& info, EncoderContext* ctx, int64_t targetAddress)
     {
         std::int64_t res{};
@@ -144,8 +146,16 @@ namespace zasm
 
         if (ctx == nullptr)
         {
-            desiredBranchType = ZydisBranchType::ZYDIS_BRANCH_TYPE_NEAR;
-            res = kTemporaryRel32Value;
+            if (!info.canEncodeRel32())
+            {
+                desiredBranchType = ZydisBranchType::ZYDIS_BRANCH_TYPE_SHORT;
+                res = kTemporaryRel8Value;
+            }
+            else
+            {
+                desiredBranchType = ZydisBranchType::ZYDIS_BRANCH_TYPE_NEAR;
+                res = kTemporaryRel32Value;
+            }
         }
         else
         {
@@ -301,6 +311,12 @@ namespace zasm
         dst.mem.scale = src.getScale();
         dst.mem.size = static_cast<uint16_t>(src.getByteSize());
 
+        // Scale has to be zero if no index is assigned.
+        if (dst.mem.index == ZydisRegister::ZYDIS_REGISTER_NONE)
+        {
+            dst.mem.scale = 0;
+        }
+
         std::int64_t displacement = src.getDisplacement();
 
         const auto address = ctx != nullptr ? ctx->va : 0;
@@ -333,16 +349,6 @@ namespace zasm
                 displacement += kTemporaryRel32Value;
             }
             usingLabel = true;
-        }
-
-        // For 64 bit we default to rip rel.
-        if (state.req.machine_mode == ZYDIS_MACHINE_MODE_LONG_64)
-        {
-            if (dst.mem.base == ZYDIS_REGISTER_NONE && dst.mem.index == ZYDIS_REGISTER_NONE && usingLabel)
-            {
-                // Turn into rip-rel.
-                dst.mem.base = ZYDIS_REGISTER_RIP;
-            }
         }
 
         if (dst.mem.base == ZYDIS_REGISTER_NONE && dst.mem.index == ZYDIS_REGISTER_NONE)
@@ -473,11 +479,31 @@ namespace zasm
         }
     }
 
-    static Error encode_(
-        EncoderResult& res, EncoderContext* ctx, MachineMode mode, x86::Attribs attribs, Mnemonic mnemonic, size_t numOps,
-        const Operand* operands)
+    static constexpr bool validateMachineMode(MachineMode mode)
     {
-        res.length = 0;
+        switch (mode)
+        {
+            case MachineMode::Invalid:
+                return false;
+            case MachineMode::I386:
+            case MachineMode::AMD64:
+                return true;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    static Error encode_(
+        EncoderResult& res, EncoderContext* ctx, MachineMode mode, Instruction::Attribs attribs, Instruction::Mnemonic mnemonic,
+        size_t numOps, const Operand* operands)
+    {
+        if (!validateMachineMode(mode))
+        {
+            return Error::InvalidMode;
+        }
+
+        res.buffer.length = 0;
 
         EncoderState state{};
         state.ctx = ctx;
@@ -491,7 +517,7 @@ namespace zasm
         {
             req.machine_mode = ZYDIS_MACHINE_MODE_LONG_COMPAT_32;
         }
-        req.mnemonic = static_cast<ZydisMnemonic>(static_cast<uint32_t>(mnemonic));
+        req.mnemonic = static_cast<ZydisMnemonic>(mnemonic.value());
         req.prefixes = getAttribs(attribs);
 
         if (hasAttrib(attribs, x86::Attribs::OperandSize8))
@@ -525,8 +551,8 @@ namespace zasm
 
         fixupIs4Operands(req);
 
-        std::size_t bufLen = res.data.size();
-        switch (auto status = ZydisEncoderEncodeInstruction(&req, res.data.data(), &bufLen); status)
+        std::size_t bufLen = res.buffer.data.size();
+        switch (auto status = ZydisEncoderEncodeInstruction(&req, res.buffer.data.data(), &bufLen); status)
         {
             case ZYAN_STATUS_SUCCESS:
                 break;
@@ -535,7 +561,7 @@ namespace zasm
                 return Error::ImpossibleInstruction;
         }
 
-        res.length = static_cast<std::uint8_t>(bufLen);
+        res.buffer.length = static_cast<std::uint8_t>(bufLen);
         res.relocKind = state.relocKind;
         res.relocData = state.relocData;
         res.relocLabel = state.relocLabel;
@@ -544,11 +570,11 @@ namespace zasm
     }
 
     Expected<EncoderResult, Error> encode(
-        MachineMode mode, Instruction::Attribs attribs, Mnemonic mnemonic, std::size_t numOps, const Operand* operands)
+        MachineMode mode, Instruction::Attribs attribs, Instruction::Mnemonic mnemonic, std::size_t numOps,
+        const Operand* operands)
     {
         EncoderResult res;
-        if (auto err = encode_(res, nullptr, mode, static_cast<x86::Attribs>(attribs), mnemonic, numOps, operands);
-            err != Error::None)
+        if (auto err = encode_(res, nullptr, mode, attribs, mnemonic, numOps, operands); err != Error::None)
         {
             return makeUnexpected(err);
         }
@@ -556,16 +582,15 @@ namespace zasm
     }
 
     static Expected<EncoderResult, Error> encodeWithContext(
-        EncoderContext& ctx, MachineMode mode, Instruction::Attribs prefixes, Mnemonic mnemonic, std::size_t numOps,
-        const Operand* operands)
+        EncoderContext& ctx, MachineMode mode, Instruction::Attribs prefixes, Instruction::Mnemonic mnemonic,
+        std::size_t numOps, const Operand* operands)
     {
         EncoderResult res;
 
         // encode_ will set this to kHintRequiresSize in case a length is required for correct encoding.
         ctx.instrSize = 0;
 
-        if (const auto encodeError = encode_(res, &ctx, mode, static_cast<x86::Attribs>(prefixes), mnemonic, numOps, operands);
-            encodeError != Error::None)
+        if (const auto encodeError = encode_(res, &ctx, mode, prefixes, mnemonic, numOps, operands); encodeError != Error::None)
         {
             return makeUnexpected(encodeError);
         }
@@ -573,9 +598,8 @@ namespace zasm
         while (ctx.instrSize == kHintRequiresSize)
         {
             // Encode with now known size, instruction size can change again in this call.
-            ctx.instrSize = res.length;
-            if (const auto encodeError = encode_(
-                    res, &ctx, mode, static_cast<x86::Attribs>(prefixes), mnemonic, numOps, operands);
+            ctx.instrSize = res.buffer.length;
+            if (const auto encodeError = encode_(res, &ctx, mode, prefixes, mnemonic, numOps, operands);
                 encodeError != Error::None)
             {
                 return makeUnexpected(encodeError);
@@ -584,7 +608,7 @@ namespace zasm
             // If the instruction size does not match what we previously specified
             // we need to re-encode it with the now known size, this can happen near
             // the limits of rel8/32 but is unlikely.
-            if (res.length != ctx.instrSize)
+            if (res.buffer.length != ctx.instrSize)
             {
                 ctx.instrSize = kHintRequiresSize;
             }
@@ -596,8 +620,7 @@ namespace zasm
     Expected<EncoderResult, Error> encode(EncoderContext& ctx, MachineMode mode, const Instruction& instr)
     {
         const auto& ops = instr.getOperands();
-        return encodeWithContext(
-            ctx, mode, instr.getAttribs(), instr.getMnemonic(), instr.getVisibleOperandCount(), ops.data());
+        return encodeWithContext(ctx, mode, instr.getAttribs(), instr.getMnemonic(), instr.getOperandCount(), ops.data());
     }
 
 } // namespace zasm

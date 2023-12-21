@@ -3,16 +3,19 @@
 
 cmake_minimum_required(VERSION 3.15)
 
+# Enable support for MSVC_RUNTIME_LIBRARY
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
 	message(FATAL_ERROR "In-tree builds are not supported. Run CMake from a separate directory: cmake -B build")
 endif()
 
-# Regenerate CMakeLists.txt automatically in the root project
 set(CMKR_ROOT_PROJECT OFF)
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 	set(CMKR_ROOT_PROJECT ON)
 
-	# Bootstrap cmkr
+	# Bootstrap cmkr and automatically regenerate CMakeLists.txt
 	include(cmkr.cmake OPTIONAL RESULT_VARIABLE CMKR_INCLUDE_RESULT)
 	if(CMKR_INCLUDE_RESULT)
 		cmkr()
@@ -20,10 +23,8 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 
 	# Enable folder support
 	set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-endif()
 
-# Create a configure-time dependency on cmake.toml to improve IDE support
-if(CMKR_ROOT_PROJECT)
+	# Create a configure-time dependency on cmake.toml to improve IDE support
 	configure_file(cmake.toml cmake.toml COPYONLY)
 endif()
 
@@ -37,7 +38,7 @@ project(zasm
 		CXX
 )
 
-# thirdparty
+# Subdirectory: thirdparty
 set(CMKR_CMAKE_FOLDER ${CMAKE_FOLDER})
 if(CMAKE_FOLDER)
 	set(CMAKE_FOLDER "${CMAKE_FOLDER}/thirdparty")
@@ -47,18 +48,14 @@ endif()
 add_subdirectory(thirdparty)
 set(CMAKE_FOLDER ${CMKR_CMAKE_FOLDER})
 
-# Target zasm_common
-set(CMKR_TARGET zasm_common)
-set(zasm_common_SOURCES "")
-
-set(CMKR_SOURCES ${zasm_common_SOURCES})
+# Target: zasm_common
 add_library(zasm_common INTERFACE)
 
-if(zasm_common_SOURCES)
-	target_sources(zasm_common INTERFACE ${zasm_common_SOURCES})
-endif()
-
 add_library(zasm::common ALIAS zasm_common)
+target_compile_features(zasm_common INTERFACE
+	cxx_std_17
+)
+
 if(MSVC) # msvc
 	target_compile_options(zasm_common INTERFACE
 		"/bigobj"
@@ -68,42 +65,48 @@ if(MSVC) # msvc
 	)
 endif()
 
-unset(CMKR_TARGET)
-unset(CMKR_SOURCES)
-
-# Target zasm
-set(CMKR_TARGET zasm)
-set(zasm_SOURCES "")
-
-list(APPEND zasm_SOURCES
+# Target: zasm
+set(zasm_SOURCES
+	"src/zasm/src/core/filestream.cpp"
+	"src/zasm/src/core/memorystream.cpp"
 	"src/zasm/src/decoder/decoder.cpp"
 	"src/zasm/src/encoder/encoder.cpp"
-	"src/zasm/src/encoder/generator.cpp"
 	"src/zasm/src/formatter/formatter.cpp"
 	"src/zasm/src/program/data.cpp"
 	"src/zasm/src/program/instruction.cpp"
 	"src/zasm/src/program/program.cpp"
 	"src/zasm/src/program/register.cpp"
+	"src/zasm/src/program/saverestore.cpp"
+	"src/zasm/src/program/saverestore.load.cpp"
+	"src/zasm/src/program/saverestore.save.cpp"
 	"src/zasm/src/serialization/serializer.cpp"
 	"src/zasm/src/x86/x86.assembler.cpp"
 	"src/zasm/src/x86/x86.register.cpp"
 	"src/zasm/src/zasm.cpp"
 	"src/zasm/src/encoder/encoder.context.hpp"
-	"src/zasm/src/encoder/generator.hpp"
 	"src/zasm/src/program/program.node.hpp"
 	"src/zasm/src/program/program.state.hpp"
+	"src/zasm/src/program/saverestorehelper.hpp"
+	"src/zasm/src/program/saverestoretypes.hpp"
+	"include/zasm/base/instruction.hpp"
+	"include/zasm/base/meta.hpp"
 	"include/zasm/base/mode.hpp"
 	"include/zasm/core/bitsize.hpp"
 	"include/zasm/core/enumflags.hpp"
 	"include/zasm/core/errors.hpp"
 	"include/zasm/core/expected.hpp"
+	"include/zasm/core/filestream.hpp"
 	"include/zasm/core/math.hpp"
+	"include/zasm/core/memorystream.hpp"
 	"include/zasm/core/objectpool.hpp"
 	"include/zasm/core/packed.hpp"
+	"include/zasm/core/stream.hpp"
 	"include/zasm/core/stringpool.hpp"
+	"include/zasm/core/strongtype.hpp"
 	"include/zasm/decoder/decoder.hpp"
 	"include/zasm/encoder/encoder.hpp"
 	"include/zasm/formatter/formatter.hpp"
+	"include/zasm/program/align.hpp"
 	"include/zasm/program/data.hpp"
 	"include/zasm/program/embeddedlabel.hpp"
 	"include/zasm/program/immediate.hpp"
@@ -116,73 +119,49 @@ list(APPEND zasm_SOURCES
 	"include/zasm/program/operand.hpp"
 	"include/zasm/program/program.hpp"
 	"include/zasm/program/register.hpp"
+	"include/zasm/program/saverestore.hpp"
 	"include/zasm/program/section.hpp"
+	"include/zasm/program/sentinel.hpp"
 	"include/zasm/serialization/serializer.hpp"
 	"include/zasm/x86/assembler.hpp"
 	"include/zasm/x86/emitter.hpp"
-	"include/zasm/x86/instruction.hpp"
 	"include/zasm/x86/memory.hpp"
+	"include/zasm/x86/meta.hpp"
+	"include/zasm/x86/mnemonic.hpp"
 	"include/zasm/x86/register.hpp"
 	"include/zasm/x86/x86.hpp"
 	"include/zasm/zasm.hpp"
-)
-
-list(APPEND zasm_SOURCES
 	cmake.toml
 )
 
-set(CMKR_SOURCES ${zasm_SOURCES})
 add_library(zasm STATIC)
 
-if(zasm_SOURCES)
-	target_sources(zasm PRIVATE ${zasm_SOURCES})
-endif()
-
+target_sources(zasm PRIVATE ${zasm_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_SOURCES})
 
 add_library(zasm::zasm ALIAS zasm)
-target_compile_features(zasm PUBLIC
-	cxx_std_17
-)
-
 target_include_directories(zasm PUBLIC
 	include
 )
 
 target_link_libraries(zasm PUBLIC
+	zasm::common
 	Zydis
 )
 
-unset(CMKR_TARGET)
-unset(CMKR_SOURCES)
-
-# Target zasm_testdata
-if(ZASM_BUILD_TESTS) # tests
-	set(CMKR_TARGET zasm_testdata)
-	set(zasm_testdata_SOURCES "")
-
-	set(CMKR_SOURCES ${zasm_testdata_SOURCES})
+# Target: zasm_testdata
+if(ZASM_BUILD_TESTS OR CMKR_ROOT_PROJECT) # tests
 	add_library(zasm_testdata INTERFACE)
-
-	if(zasm_testdata_SOURCES)
-		target_sources(zasm_testdata INTERFACE ${zasm_testdata_SOURCES})
-	endif()
 
 	add_library(zasm::testdata ALIAS zasm_testdata)
 	target_include_directories(zasm_testdata INTERFACE
 		"src/testdata"
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
 endif()
-
-# Target zasm_tests
-if(ZASM_BUILD_TESTS) # tests
-	set(CMKR_TARGET zasm_tests)
-	set(zasm_tests_SOURCES "")
-
-	list(APPEND zasm_tests_SOURCES
+# Target: zasm_tests
+if(ZASM_BUILD_TESTS OR CMKR_ROOT_PROJECT) # tests
+	set(zasm_tests_SOURCES
 		"src/tests/main.cpp"
 		"src/tests/tests/tests.assembler.cpp"
 		"src/tests/tests/tests.decoder.cpp"
@@ -191,35 +170,25 @@ if(ZASM_BUILD_TESTS) # tests
 		"src/tests/tests/tests.imports.cpp"
 		"src/tests/tests/tests.instruction.cpp"
 		"src/tests/tests/tests.instructions.x64.cpp"
+		"src/tests/tests/tests.instructionsinfo.x64.cpp"
 		"src/tests/tests/tests.observer.cpp"
 		"src/tests/tests/tests.packed.cpp"
 		"src/tests/tests/tests.program.cpp"
 		"src/tests/tests/tests.registers.cpp"
 		"src/tests/tests/tests.relocation.cpp"
+		"src/tests/tests/tests.saverestore.cpp"
 		"src/tests/tests/tests.sections.cpp"
 		"src/tests/tests/tests.segments.cpp"
 		"src/tests/tests/tests.serialization.cpp"
 		"src/tests/tests/tests.stringpool.cpp"
 		"src/tests/testutils.cpp"
 		"src/tests/testutils.hpp"
-	)
-
-	list(APPEND zasm_tests_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_tests_SOURCES})
 	add_executable(zasm_tests)
 
-	if(zasm_tests_SOURCES)
-		target_sources(zasm_tests PRIVATE ${zasm_tests_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_tests)
-	endif()
-
+	target_sources(zasm_tests PRIVATE ${zasm_tests_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_tests_SOURCES})
 
 	target_link_libraries(zasm_tests PRIVATE
@@ -234,39 +203,27 @@ if(ZASM_BUILD_TESTS) # tests
 			tests
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_tests)
+	endif()
+
 endif()
-
-# Target zasm_benchmarks
-if(ZASM_BUILD_TESTS) # tests
-	set(CMKR_TARGET zasm_benchmarks)
-	set(zasm_benchmarks_SOURCES "")
-
-	list(APPEND zasm_benchmarks_SOURCES
+# Target: zasm_benchmarks
+if(ZASM_BUILD_TESTS OR CMKR_ROOT_PROJECT) # tests
+	set(zasm_benchmarks_SOURCES
 		"src/benchmark/benchmarks/benchmark.assembler.cpp"
 		"src/benchmark/benchmarks/benchmark.formatter.cpp"
+		"src/benchmark/benchmarks/benchmark.instructioninfo.cpp"
 		"src/benchmark/benchmarks/benchmark.serialization.cpp"
 		"src/benchmark/benchmarks/benchmark.stringpool.cpp"
 		"src/benchmark/main.cpp"
-	)
-
-	list(APPEND zasm_benchmarks_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_benchmarks_SOURCES})
 	add_executable(zasm_benchmarks)
 
-	if(zasm_benchmarks_SOURCES)
-		target_sources(zasm_benchmarks PRIVATE ${zasm_benchmarks_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_benchmarks)
-	endif()
-
+	target_sources(zasm_benchmarks PRIVATE ${zasm_benchmarks_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_benchmarks_SOURCES})
 
 	target_link_libraries(zasm_benchmarks PRIVATE
@@ -281,21 +238,15 @@ if(ZASM_BUILD_TESTS) # tests
 			benchmarks
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
-endif()
-
-# Target zasm_example_common
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_common)
-	set(zasm_example_common_SOURCES "")
-
-	set(CMKR_SOURCES ${zasm_example_common_SOURCES})
-	add_library(zasm_example_common INTERFACE)
-
-	if(zasm_example_common_SOURCES)
-		target_sources(zasm_example_common INTERFACE ${zasm_example_common_SOURCES})
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_benchmarks)
 	endif()
+
+endif()
+# Target: zasm_example_common
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	add_library(zasm_example_common INTERFACE)
 
 	add_library(zasm::examples::common ALIAS zasm_example_common)
 	target_include_directories(zasm_example_common INTERFACE
@@ -307,35 +258,17 @@ if(ZASM_BUILD_EXAMPLES) # examples
 		zasm::zasm
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
 endif()
-
-# Target zasm_example_assembler_basic
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_assembler_basic)
-	set(zasm_example_assembler_basic_SOURCES "")
-
-	list(APPEND zasm_example_assembler_basic_SOURCES
+# Target: zasm_example_assembler_basic
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_assembler_basic_SOURCES
 		"examples/assembler_basic/main.cpp"
-	)
-
-	list(APPEND zasm_example_assembler_basic_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_assembler_basic_SOURCES})
 	add_executable(zasm_example_assembler_basic)
 
-	if(zasm_example_assembler_basic_SOURCES)
-		target_sources(zasm_example_assembler_basic PRIVATE ${zasm_example_assembler_basic_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_assembler_basic)
-	endif()
-
+	target_sources(zasm_example_assembler_basic PRIVATE ${zasm_example_assembler_basic_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_assembler_basic_SOURCES})
 
 	target_link_libraries(zasm_example_assembler_basic PRIVATE
@@ -351,35 +284,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.assembler_basic
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_assembler_basic)
+	endif()
+
 endif()
-
-# Target zasm_example_assembler_sections
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_assembler_sections)
-	set(zasm_example_assembler_sections_SOURCES "")
-
-	list(APPEND zasm_example_assembler_sections_SOURCES
+# Target: zasm_example_assembler_sections
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_assembler_sections_SOURCES
 		"examples/assembler_sections/main.cpp"
-	)
-
-	list(APPEND zasm_example_assembler_sections_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_assembler_sections_SOURCES})
 	add_executable(zasm_example_assembler_sections)
 
-	if(zasm_example_assembler_sections_SOURCES)
-		target_sources(zasm_example_assembler_sections PRIVATE ${zasm_example_assembler_sections_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_assembler_sections)
-	endif()
-
+	target_sources(zasm_example_assembler_sections PRIVATE ${zasm_example_assembler_sections_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_assembler_sections_SOURCES})
 
 	target_link_libraries(zasm_example_assembler_sections PRIVATE
@@ -395,35 +315,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.assembler_sections
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_assembler_sections)
+	endif()
+
 endif()
-
-# Target zasm_example_decode_to_assembler
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_decode_to_assembler)
-	set(zasm_example_decode_to_assembler_SOURCES "")
-
-	list(APPEND zasm_example_decode_to_assembler_SOURCES
+# Target: zasm_example_decode_to_assembler
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_decode_to_assembler_SOURCES
 		"examples/decode_to_assembler/main.cpp"
-	)
-
-	list(APPEND zasm_example_decode_to_assembler_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_decode_to_assembler_SOURCES})
 	add_executable(zasm_example_decode_to_assembler)
 
-	if(zasm_example_decode_to_assembler_SOURCES)
-		target_sources(zasm_example_decode_to_assembler PRIVATE ${zasm_example_decode_to_assembler_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_decode_to_assembler)
-	endif()
-
+	target_sources(zasm_example_decode_to_assembler PRIVATE ${zasm_example_decode_to_assembler_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_decode_to_assembler_SOURCES})
 
 	target_link_libraries(zasm_example_decode_to_assembler PRIVATE
@@ -439,35 +346,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.decode_to_assembler
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_decode_to_assembler)
+	endif()
+
 endif()
-
-# Target zasm_example_program_observer
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_program_observer)
-	set(zasm_example_program_observer_SOURCES "")
-
-	list(APPEND zasm_example_program_observer_SOURCES
+# Target: zasm_example_program_observer
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_program_observer_SOURCES
 		"examples/program_observer/main.cpp"
-	)
-
-	list(APPEND zasm_example_program_observer_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_program_observer_SOURCES})
 	add_executable(zasm_example_program_observer)
 
-	if(zasm_example_program_observer_SOURCES)
-		target_sources(zasm_example_program_observer PRIVATE ${zasm_example_program_observer_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_program_observer)
-	endif()
-
+	target_sources(zasm_example_program_observer PRIVATE ${zasm_example_program_observer_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_program_observer_SOURCES})
 
 	target_link_libraries(zasm_example_program_observer PRIVATE
@@ -483,35 +377,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.program_observer
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_program_observer)
+	endif()
+
 endif()
-
-# Target zasm_example_instruction_info
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_instruction_info)
-	set(zasm_example_instruction_info_SOURCES "")
-
-	list(APPEND zasm_example_instruction_info_SOURCES
+# Target: zasm_example_instruction_info
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_instruction_info_SOURCES
 		"examples/instruction_info/main.cpp"
-	)
-
-	list(APPEND zasm_example_instruction_info_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_instruction_info_SOURCES})
 	add_executable(zasm_example_instruction_info)
 
-	if(zasm_example_instruction_info_SOURCES)
-		target_sources(zasm_example_instruction_info PRIVATE ${zasm_example_instruction_info_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_instruction_info)
-	endif()
-
+	target_sources(zasm_example_instruction_info PRIVATE ${zasm_example_instruction_info_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_instruction_info_SOURCES})
 
 	target_link_libraries(zasm_example_instruction_info PRIVATE
@@ -527,35 +408,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.instruction_info
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_instruction_info)
+	endif()
+
 endif()
-
-# Target zasm_example_modify_program
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_modify_program)
-	set(zasm_example_modify_program_SOURCES "")
-
-	list(APPEND zasm_example_modify_program_SOURCES
+# Target: zasm_example_modify_program
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_modify_program_SOURCES
 		"examples/modify_program/main.cpp"
-	)
-
-	list(APPEND zasm_example_modify_program_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_modify_program_SOURCES})
 	add_executable(zasm_example_modify_program)
 
-	if(zasm_example_modify_program_SOURCES)
-		target_sources(zasm_example_modify_program PRIVATE ${zasm_example_modify_program_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_modify_program)
-	endif()
-
+	target_sources(zasm_example_modify_program PRIVATE ${zasm_example_modify_program_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_modify_program_SOURCES})
 
 	target_link_libraries(zasm_example_modify_program PRIVATE
@@ -571,35 +439,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.modify_program
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_modify_program)
+	endif()
+
 endif()
-
-# Target zasm_example_basic_jit
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_basic_jit)
-	set(zasm_example_basic_jit_SOURCES "")
-
-	list(APPEND zasm_example_basic_jit_SOURCES
+# Target: zasm_example_basic_jit
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_basic_jit_SOURCES
 		"examples/basic_jit/main.cpp"
-	)
-
-	list(APPEND zasm_example_basic_jit_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_basic_jit_SOURCES})
 	add_executable(zasm_example_basic_jit)
 
-	if(zasm_example_basic_jit_SOURCES)
-		target_sources(zasm_example_basic_jit PRIVATE ${zasm_example_basic_jit_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_basic_jit)
-	endif()
-
+	target_sources(zasm_example_basic_jit PRIVATE ${zasm_example_basic_jit_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_basic_jit_SOURCES})
 
 	target_link_libraries(zasm_example_basic_jit PRIVATE
@@ -615,35 +470,22 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.basic_jit
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_basic_jit)
+	endif()
+
 endif()
-
-# Target zasm_example_modify_instruction
-if(ZASM_BUILD_EXAMPLES) # examples
-	set(CMKR_TARGET zasm_example_modify_instruction)
-	set(zasm_example_modify_instruction_SOURCES "")
-
-	list(APPEND zasm_example_modify_instruction_SOURCES
+# Target: zasm_example_modify_instruction
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_modify_instruction_SOURCES
 		"examples/modify_instruction/main.cpp"
-	)
-
-	list(APPEND zasm_example_modify_instruction_SOURCES
 		cmake.toml
 	)
 
-	set(CMKR_SOURCES ${zasm_example_modify_instruction_SOURCES})
 	add_executable(zasm_example_modify_instruction)
 
-	if(zasm_example_modify_instruction_SOURCES)
-		target_sources(zasm_example_modify_instruction PRIVATE ${zasm_example_modify_instruction_SOURCES})
-	endif()
-
-	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
-	if(NOT CMKR_VS_STARTUP_PROJECT)
-		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_modify_instruction)
-	endif()
-
+	target_sources(zasm_example_modify_instruction PRIVATE ${zasm_example_modify_instruction_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_modify_instruction_SOURCES})
 
 	target_link_libraries(zasm_example_modify_instruction PRIVATE
@@ -659,13 +501,46 @@ if(ZASM_BUILD_EXAMPLES) # examples
 			example.modify_instruction
 	)
 
-	unset(CMKR_TARGET)
-	unset(CMKR_SOURCES)
-endif()
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_modify_instruction)
+	endif()
 
+endif()
+# Target: zasm_example_memory_operands
+if(ZASM_BUILD_EXAMPLES OR CMKR_ROOT_PROJECT) # examples
+	set(zasm_example_memory_operands_SOURCES
+		"examples/memory_operands/main.cpp"
+		cmake.toml
+	)
+
+	add_executable(zasm_example_memory_operands)
+
+	target_sources(zasm_example_memory_operands PRIVATE ${zasm_example_memory_operands_SOURCES})
+	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${zasm_example_memory_operands_SOURCES})
+
+	target_link_libraries(zasm_example_memory_operands PRIVATE
+		zasm::examples::common
+	)
+
+	set_target_properties(zasm_example_memory_operands PROPERTIES
+		FOLDER
+			examples
+		PROJECT_LABEL
+			memory_operands
+		RUNTIME_OUTPUT_NAME
+			example.memory_operands
+	)
+
+	get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+	if(NOT CMKR_VS_STARTUP_PROJECT)
+		set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zasm_example_memory_operands)
+	endif()
+
+endif()
 enable_testing()
 
-if(ZASM_BUILD_TESTS) # tests
+if(ZASM_BUILD_TESTS OR CMKR_ROOT_PROJECT) # tests
 	add_test(
 		NAME
 			tests

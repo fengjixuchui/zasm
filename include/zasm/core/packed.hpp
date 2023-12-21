@@ -8,6 +8,13 @@
 
 namespace zasm
 {
+    /// <summary>
+    /// Container to tightly pack multiple elements with a given bit size to store
+    /// in the provided underlying type.
+    /// </summary>
+    /// <typeparam name="TUnderlying">The underlying storage type</typeparam>
+    /// <typeparam name="TElement">Value type of each element packed</typeparam>
+    /// <typeparam name="TElementBitSize">The amount of bits to store TElement in TUnderlying</typeparam>
     template<typename TUnderlying, typename TElement, std::size_t TElementBitSize> class Packed
     {
         static_assert(!std::is_signed_v<TUnderlying>, "Underlying type must be unsigned");
@@ -29,6 +36,16 @@ namespace zasm
                 set(idx, elem);
                 idx++;
             }
+        }
+
+        constexpr bool operator==(const Packed& other) const noexcept
+        {
+            return _data == other._data;
+        }
+        
+        constexpr bool operator!=(const Packed& other) const noexcept
+        {
+            return _data == other._data;
         }
 
         template<std::size_t TIndex> constexpr void set(const TElement& val) noexcept
